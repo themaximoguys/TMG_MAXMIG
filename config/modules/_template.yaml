@@ -1,0 +1,112 @@
+# ============================================================================
+# Module definition template
+# ============================================================================
+#
+# Copy this file to config/modules/<your_module>.yaml (or config/custom_objects/
+# for non-OOB object structures — same schema, no separate code path) and edit.
+#
+# Files whose name starts with "_" are SKIPPED by the registry, which is why this
+# skeleton can live here without registering itself as a real module. Rename it
+# without the underscore and it loads as-is.
+#
+# Adding a module is a config-only change: no Python is written per module.
+#
+# Validation notes (see src/maxmig/model/schema.py):
+#   * Unknown keys are rejected, so a typo like "key_field:" fails loudly at
+#     startup instead of silently defaulting.
+#   * Every name in extract_order / load_order must match an object's `name`.
+#   * Object names must be unique within a module, and a module name must be
+#     unique across all loaded config directories.
+# ============================================================================
+
+# Module name. Must be unique across config/modules/ and config/custom_objects/.
+# This is the value passed to `migrate export --module <module>` and it becomes
+# the export subdirectory name: exports/{run_id}/{module}/{object_name}.csv
+module: my_module
+
+# Optional free-text description shown by `migrate list-modules`.
+description: "One line on what business area this module covers."
+
+# One or more top-level object structures. Each becomes its own CSV file,
+# plus one additional CSV per child (children are never nested inside a cell).
+objects:
+  - # Logical name used in CLI flags, extract_order/load_order, and the CSV
+    # filename. Lowercase snake_case by convention; it does NOT have to match
+    # the Maximo object name.
+    name: my_object
+
+    # The Maximo business object / table name (uppercase), for documentation and
+    # for the discovery probe. Optional.
+    maximo_object: MYOBJECT
+
+    # How this object is reached. At least one of oslc_resource / rest_mbo_table
+    # must be set, and `prefer` must point at one that IS set.
+    access:
+      # OSLC resource name. Convention is mxapi{object} (e.g. mxapipo for PO),
+      # with known exceptions (mxapipersongroup, not mxpersongroup) — use
+      # `migrate discover --object <name>` when unsure. Required for child
+      # relations and for writes. Set to null if no OSLC resource exists.
+      oslc_resource: mxapimyobject
+
+      # REST MBO table name, always the lowercased table name. Flat reads only —
+      # cannot return nested child data. Set to null if unavailable.
+      rest_mbo_table: myobject
+
+      # Which API to use first: "oslc" or "rest_mbo".
+      #   oslc     -> objects with children, or anything that must be written back
+      #   rest_mbo -> high-volume flat tables (faster, no child support)
+      # The client falls back to the other API on a non-2xx response.
+      prefer: oslc
+
+    # Natural key, and the whole basis of idempotent loading: before creating a
+    # record the loader looks the target up by these fields, then PATCHes the
+    # diff instead of creating a duplicate. Must be non-empty, must be portable
+    # across environments (business keys, never internal surrogate IDs), and is
+    # written as the leading columns of the CSV.
+    key_fields: [myobjectnum, siteid]
+
+    # Attributes to extract and load, in CSV column order after key_fields and
+    # any foreign_key columns. Values round-trip as the raw API strings — no
+    # date or number reformatting.
+    fields: [myobjectnum, siteid, description, status]
+
+    # Optional default filter applied on extract, in the syntax of the API in
+    # use (OSLC: 'status="APPR"'). null means no filter. A --where flag on the
+    # CLI overrides this per run.
+    where: null
+
+    # Child objects reached through a parent relation. Recursive: a child may
+    # declare its own `children` to any depth.
+    children:
+      - # Logical name, and the child's CSV filename.
+        name: my_child
+        maximo_object: MYCHILD
+
+        # The OSLC relation attribute on the parent, used to build the query
+        # (oslc.select=*,mychild{*}) and to re-nest the child rows on load.
+        relation_attribute: mychild
+
+        # Parent column(s) copied into every child CSV row so the flat files stay
+        # relationally intact. A single string, or a list for a composite key.
+        # These must be a subset of the parent's key_fields.
+        foreign_key: [myobjectnum, siteid]
+
+        # The child's own natural key, including the foreign key columns.
+        key_fields: [myobjectnum, siteid, mychildnum]
+
+        # Child attributes. Do not repeat the foreign_key columns here; they are
+        # written from the parent.
+        fields: [mychildnum, description]
+
+        # Grandchildren, same shape. Empty list if there are none.
+        children: []
+
+# Extract sequence. Every entry must name an object above. Order rarely matters
+# on extract (reads are independent) but it documents intent and keeps the
+# manifest deterministic.
+extract_order: [my_object]
+
+# Load sequence, and this one DOES matter: referenced objects must exist in the
+# target before the objects that reference them (vendors before POs, items
+# before inventory balances).
+load_order: [my_object]

@@ -1,0 +1,87 @@
+# Inventory pilot module.
+# Field lists are a realistic starting point, not a verified per-environment inventory —
+# confirm against the source environment with `migrate discover` before a production run.
+
+module: inventory
+description: "Item master with specifications and assembly structure, storerooms, and inventory balances."
+
+objects:
+  - name: item
+    maximo_object: ITEM
+    access:
+      oslc_resource: mxapiitem
+      rest_mbo_table: item
+      prefer: oslc
+    key_fields: [itemnum, itemsetid]
+    fields:
+      [itemnum, itemsetid, description, status, issueunit, orderunit, commoditygroup, commodity, rotating, lottype]
+    where: null
+    children:
+      - name: item_spec
+        maximo_object: ITEMSPEC
+        relation_attribute: itemspec
+        foreign_key: [itemnum, itemsetid]
+        key_fields: [itemnum, itemsetid, assetattrid, classstructureid]
+        fields:
+          [assetattrid, classstructureid, alnvalue, numvalue, measureunitid, section, mandatory, displaysequence]
+        children: []
+
+      - name: item_structure
+        maximo_object: ITEMSTRUCT
+        relation_attribute: itemstructure
+        foreign_key: [itemnum, itemsetid]
+        key_fields: [parent, itemnum, itemsetid]
+        fields: [parent, itemnum, itemsetid, quantity, orgid, siteid]
+        children: []
+
+  - name: storeroom
+    maximo_object: LOCATIONS
+    access:
+      oslc_resource: mxapilocations
+      rest_mbo_table: locations
+      prefer: oslc
+    key_fields: [location, siteid]
+    fields: [location, siteid, orgid, description, type, status, glaccount, disabled]
+    # LOCATIONS holds every location type; only storerooms belong to this module.
+    where: 'type="STOREROOM"'
+    children: []
+
+  - name: inventory_balance
+    maximo_object: INVENTORY
+    access:
+      # rest_mbo_table stays populated for environments where /maximo/rest/mbo/
+      # isn't gated, but oslc is the default: on SSO/OIDC-fronted instances
+      # (e.g. maxdemo) /maximo/rest/mbo/ silently redirects to the OIDC login
+      # page even with a valid apikey, while /maximo/api/os/ (this codebase's
+      # "oslc" access mode) is served outside that gate and also supports
+      # pulling invbalances/invcost as nested children in one request.
+      oslc_resource: mxapiinventory
+      rest_mbo_table: inventory
+      prefer: oslc
+    key_fields: [itemnum, itemsetid, location, siteid]
+    fields:
+      # binnum here is INVENTORY's own default-bin field (a single value per
+      # inventory record) -- distinct from invbalances[].binnum below, which is
+      # the per-bin physical-count breakdown (one row per actual bin).
+      [itemnum, itemsetid, location, siteid, binnum, curbal, avblbalance, issueunit, minlevel, maxlevel, abctype]
+    where: null
+    children:
+      - name: invbalances
+        maximo_object: INVBALANCES
+        relation_attribute: invbalances
+        foreign_key: [itemnum, itemsetid, location, siteid]
+        key_fields: [itemnum, itemsetid, location, siteid, binnum, lotnum]
+        fields: [binnum, lotnum, curbal, physcnt, physcntdate, reconciled, stagedcurbal]
+        children: []
+
+      - name: invcost
+        maximo_object: INVCOST
+        relation_attribute: invcost
+        foreign_key: [itemnum, itemsetid, location, siteid]
+        key_fields: [itemnum, itemsetid, location, siteid, invcostid]
+        fields: [invcostid, orgid, avgcost, lastcost, stdcost, condrate, glaccount, controlacc, shrinkageacc, invcostadjacc]
+        children: []
+
+# Item master first, then the storerooms balances hang off, then the balances themselves.
+extract_order: [item, storeroom, inventory_balance]
+load_order: [item, storeroom, inventory_balance]

@@ -1,0 +1,32 @@
+module: sample
+description: "Minimal fixture module used only by unit tests."
+objects:
+  - name: widget
+    maximo_object: WIDGET
+    access:
+      oslc_resource: mxapiwidget
+      rest_mbo_table: widget
+      prefer: oslc
+    key_fields: [widgetnum, siteid]
+    fields: [widgetnum, siteid, description, status]
+    where: null
+    children:
+      - name: widget_line
+        maximo_object: WIDGETLINE
+        relation_attribute: widgetline
+        foreign_key: widgetnum
+        key_fields: [widgetnum, siteid, linenum]
+        fields: [linenum, itemnum, qty]
+        children: []
+
+  - name: gadget
+    maximo_object: GADGET
+    access:
+      rest_mbo_table: gadget
+      prefer: rest_mbo
+    key_fields: [gadgetid]
+    fields: [gadgetid, name, status]
+    children: []
+
+extract_order: [gadget, widget]
+load_order: [gadget, widget]

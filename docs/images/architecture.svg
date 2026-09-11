@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="1200" role="img" aria-labelledby="t d">
+<title id="t">MaxMig architecture</title>
+<desc id="d">Config-driven CSV migration between IBM Maximo / MAS environments. A YAML config layer drives an export path (source environment through cli, api client and extract writer to CSV on disk) and an import path (CSV through load reader and importer back out through the api client to a target environment). Source and target are the same kind of environment, selected by the --env flag.</desc>
+
+<defs>
+<marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+<path d="M0 0.5 L9.5 5 L0 9.5 z" fill="#A8501C"/>
+</marker>
+<marker id="as" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+<path d="M0 0.5 L9.5 5 L0 9.5 z" fill="#454B54"/>
+</marker>
+<marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M0 0.5 L9.5 5 L0 9.5 z" fill="#8A8275"/>
+</marker>
+</defs>
+
+<g font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif">
+
+<rect x="0" y="0" width="1200" height="800" rx="14" fill="#F4F1EA" stroke="#8A8275" stroke-width="1"/>
+
+<text x="40" y="46" font-size="25" font-weight="600" fill="#23262A">MaxMig</text>
+<text x="152" y="46" font-size="15" fill="#646A72">Data migration and dataload tool for IBM Maximo / MAS</text>
+<text x="40" y="70" font-size="13" fill="#3B4149">Config-driven extract and load between two Maximo environments. The YAML layer decides what moves; the code never changes per module.</text>
+<line x1="40" y1="88" x2="1160" y2="88" stroke="#C6BDAE" stroke-width="1"/>
+
+<text x="40" y="118" font-size="10.5" font-weight="600" letter-spacing="1.8" fill="#646A72">SOURCE ENVIRONMENT</text>
+<text x="296" y="118" font-size="10.5" font-weight="600" letter-spacing="1.8" fill="#646A72">MAXMIG</text>
+<text x="372" y="118" font-size="10.5" letter-spacing="0.6" fill="#8A8275" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">src/maxmig/</text>
+<text x="924" y="118" font-size="10.5" font-weight="600" letter-spacing="1.8" fill="#646A72">ARTIFACTS &amp; TARGET</text>
+
+<rect x="296" y="130" width="608" height="500" rx="10" fill="#E9E4D9" stroke="#C6BDAE" stroke-width="1.5"/>
+
+<rect x="326" y="148" width="560" height="100" rx="7" fill="#F3E3D3" stroke="#A8501C" stroke-width="1.6"/>
+<text x="338" y="167" font-size="10.5" font-weight="700" letter-spacing="1.5" fill="#A8501C">CONFIG LAYER</text>
+<text x="874" y="167" font-size="10" fill="#A8501C" text-anchor="end">adding a module is a new YAML file, not new code</text>
+
+<rect x="338" y="178" width="178" height="58" rx="5" fill="#FDFBF6" stroke="#C6BDAE" stroke-width="1"/>
+<text x="348" y="198" font-size="11.5" fill="#23262A" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">config/modules/*.yaml</text>
+<text x="348" y="213" font-size="9.5" fill="#646A72">purchasing.yaml, inventory.yaml</text>
+<text x="348" y="227" font-size="9.5" fill="#646A72">objects, fields, children, order</text>
+
+<line x1="518" y1="207" x2="536" y2="207" stroke="#A8501C" stroke-width="1.6" marker-end="url(#ar)"/>
+
+<rect x="540" y="178" width="150" height="58" rx="5" fill="#FDFBF6" stroke="#C6BDAE" stroke-width="1"/>
+<text x="550" y="198" font-size="11.5" fill="#23262A" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">model/registry.py</text>
+<text x="550" y="213" font-size="9.5" fill="#646A72">globs the *.yaml files</text>
+<text x="550" y="227" font-size="9.5" fill="#646A72">skips _template.yaml</text>
+
+<line x1="692" y1="207" x2="710" y2="207" stroke="#A8501C" stroke-width="1.6" marker-end="url(#ar)"/>
+
+<rect x="714" y="178" width="152" height="58" rx="5" fill="#FDFBF6" stroke="#C6BDAE" stroke-width="1"/>
+<text x="724" y="198" font-size="11.5" fill="#23262A" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">model/schema.py</text>
+<text x="724" y="213" font-size="9.5" fill="#646A72">ObjectDef, RelationDef</text>
+<text x="724" y="227" font-size="9.5" fill="#646A72">key_fields, where, access</text>
+
+<path d="M311 248 V 550" fill="none" stroke="#8A8275" stroke-width="1.4" stroke-dasharray="2 4"/>
+<path d="M311 326 H 330" fill="none" stroke="#8A8275" stroke-width="1.4" stroke-dasharray="2 4" marker-end="url(#ag)"/>
+<path d="M311 550 H 330" fill="none" stroke="#8A8275" stroke-width="1.4" stroke-dasharray="2 4" marker-end="url(#ag)"/>
+
+<rect x="326" y="270" width="560" height="164" rx="7" fill="#FDFBF6" stroke="#A8501C" stroke-width="1.4"/>
+<rect x="326" y="270" width="5" height="164" fill="#A8501C"/>
+<text x="344" y="291" font-size="10.5" font-weight="700" letter-spacing="1.5" fill="#A8501C">EXPORT</text>
+<text x="404" y="291" font-size="10" fill="#646A72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">migrate export --module purchasing --object company --env MAXDEMO</text>
+
+<rect x="344" y="298" width="146" height="56" rx="5" fill="#F7F2E7" stroke="#C6BDAE" stroke-width="1"/>
+<text x="354" y="318" font-size="12" fill="#23262A" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">cli.py</text>
+<text x="354" y="333" font-size="9.5" fill="#646A72">export command (click)</text>
+<text x="354" y="346" font-size="9.5" fill="#646A72">writes the manifest</text>
+
+<line x1="492" y1="326" x2="510" y2="326" stroke="#A8501C" stroke-width="1.8" marker-end="url(#ar)"/>
+
+<rect x="514" y="298" width="140" height="56" rx="5" fill="#F7F2E7" stroke="#C6BDAE" stroke-width="1"/>
+<text x="524" y="318" font-size="12" fill="#23262A" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">api/client.py</text>
+<text x="524" y="333" font-size="9.5" fill="#646A72">auth + page fetch</text>
+<text x="524" y="346" font-size="9.5" fill="#646A72">prefer, then fall back</text>
+
+<line x1="656" y1="326" x2="674" y2="326" stroke="#A8501C" stroke-width="1.8" marker-end="url(#ar)"/>
+
+<rect x="678" y="298" width="188" height="56" rx="5" fill="#F7F2E7" stroke="#C6BDAE" stroke-width="1"/>
+<text x="688" y="318" font-size="12" fill="#23262A" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">extract/writer.py</text>
+<text x="688" y="333" font-size="9.5" fill="#646A72">streaming atomic CSV (.partial)</text>
+<text x="688" y="346" font-size="9.5" fill="#646A72">parent + every child relation</text>
+
+<path d="M584 354 V 362" fill="none" stroke="#8A8275" stroke-width="1.2" stroke-dasharray="2 3"/>
+
+<rect x="338" y="362" width="528" height="58" rx="5" fill="#EFEAE0" stroke="#C6BDAE" stroke-width="1"/>
+<text x="348" y="377" font-size="9.5" font-weight="600" letter-spacing="0.5" fill="#646A72">api/ transport — one code path, shared by export and import</text>
+<rect x="346" y="384" width="98" height="28" rx="4" fill="#FDFBF6" stroke="#C6BDAE" stroke-width="1"/>
+<text x="395" y="402" font-size="10.5" fill="#3B4149" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">rest_mbo.py</text>
+<rect x="450" y="384" width="98" height="28" rx="4" fill="#FDFBF6" stroke="#C6BDAE" stroke-width="1"/>
+<text x="499" y="402" font-size="10.5" fill="#3B4149" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">oslc.py</text>
+<rect x="554" y="384" width="98" height="28" rx="4" fill="#FDFBF6" stroke="#C6BDAE" stroke-width="1"/>
+<text x="603" y="402" font-size="10.5" fill="#3B4149" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">filter.py</text>
+<rect x="658" y="384" width="98" height="28" rx="4" fill="#FDFBF6" stroke="#C6BDAE" stroke-width="1"/>
+<text x="707" y="402" font-size="10.5" fill="#3B4149" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">http.py</text>
+<rect x="762" y="384" width="98" height="28" rx="4" fill="#FDFBF6" stroke="#C6BDAE" stroke-width="1"/>
+<text x="811" y="402" font-size="10.5" fill="#3B4149" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">retry.py</text>
+
+<path d="M415 458 H 1042" fill="none" stroke="#454B54" stroke-width="1.8" stroke-dasharray="7 4"/>
+<path d="M1042 426 V 458" fill="none" stroke="#454B54" stroke-width="1.8" stroke-dasharray="7 4"/>
+<path d="M415 458 V 504" fill="none" stroke="#454B54" stroke-width="1.8" stroke-dasharray="7 4" marker-end="url(#as)"/>
+<text x="731" y="454" font-size="9.5" fill="#454B54" text-anchor="middle">--csv-file, or the newest export found</text>
+
+<rect x="326" y="482" width="560" height="130" rx="7" fill="#FDFBF6" stroke="#454B54" stroke-width="1.4"/>
+<rect x="326" y="482" width="5" height="130" fill="#454B54"/>
+<text x="344" y="503" font-size="10.5" font-weight="700" letter-spacing="1.5" fill="#454B54">IMPORT</text>
+<text x="404" y="503" font-size="10" fill="#646A72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">migrate import --module inventory --object item --env MAXDEMOTST</text>
+
+<rect x="344" y="510" width="154" height="80" rx="5" fill="#F7F2E7" stroke="#C6BDAE" stroke-width="1"/>
+<text x="354" y="530" font-size="12" fill="#23262A" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">load/reader.py</text>
+<text x="354" y="546" font-size="9.5" fill="#646A72">CSV back into</text>
+<text x="354" y="559" font-size="9.5" fill="#646A72">plain row dicts</text>
+
+<line x1="500" y1="550" x2="518" y2="550" stroke="#454B54" stroke-width="1.8" stroke-dasharray="6 3" marker-end="url(#as)"/>
+
+<rect x="522" y="510" width="202" height="80" rx="5" fill="#F7F2E7" stroke="#C6BDAE" stroke-width="1"/>
+<text x="532" y="530" font-size="12" fill="#23262A" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">load/importer.py</text>
+<text x="532" y="546" font-size="9.5" fill="#646A72">natural-key lookup from key_fields</text>
+<text x="532" y="559" font-size="9.5" fill="#646A72">then create or update the record</text>
+<rect x="532" y="566" width="184" height="17" rx="3" fill="#E2E0DA"/>
+<text x="540" y="578" font-size="9" fill="#454B54">dry-run by default — needs --execute</text>
+
+<line x1="726" y1="550" x2="744" y2="550" stroke="#454B54" stroke-width="1.8" stroke-dasharray="6 3" marker-end="url(#as)"/>
+
+<rect x="748" y="510" width="118" height="80" rx="5" fill="#F7F2E7" stroke="#C6BDAE" stroke-width="1"/>
+<text x="758" y="530" font-size="12" fill="#23262A" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">api/client.py</text>
+<text x="758" y="546" font-size="9.5" fill="#646A72">the same</text>
+<text x="758" y="559" font-size="9.5" fill="#646A72">transport, reused</text>
+
+<rect x="40" y="278" width="236" height="148" rx="8" fill="#FDFBF6" stroke="#5C6470" stroke-width="2"/>
+<line x1="52" y1="292" x2="52" y2="412" stroke="#2F343A" stroke-width="5" stroke-linecap="round"/>
+<text x="68" y="306" font-size="9" font-weight="700" letter-spacing="1.3" fill="#A8501C">SOURCE</text>
+<text x="68" y="329" font-size="15.5" font-weight="600" fill="#23262A">Maximo / MAS</text>
+<text x="68" y="349" font-size="10.5" fill="#3B4149">authenticated REST API</text>
+<rect x="68" y="358" width="82" height="22" rx="11" fill="#EFEAE0" stroke="#9A9081" stroke-width="1"/>
+<text x="109" y="373" font-size="9.5" fill="#3B4149" text-anchor="middle">REST MBO</text>
+<rect x="158" y="358" width="60" height="22" rx="11" fill="#EFEAE0" stroke="#9A9081" stroke-width="1"/>
+<text x="188" y="373" font-size="9.5" fill="#3B4149" text-anchor="middle">OSLC</text>
+<text x="68" y="400" font-size="9" fill="#646A72">AccessDef.prefer picks one;</text>
+<text x="68" y="413" font-size="9" fill="#646A72">falls back if it can't express the filter</text>
+
+<rect x="40" y="438" width="236" height="46" rx="6" fill="#EFEAE0" stroke="#C6BDAE" stroke-width="1"/>
+<text x="52" y="456" font-size="10" fill="#3B4149" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">config.py</text>
+<text x="112" y="456" font-size="9.5" fill="#646A72">loads .env into EnvConfig</text>
+<text x="52" y="472" font-size="9" fill="#646A72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">--env MAXDEMO → env/.env.maxdemo</text>
+
+<rect x="924" y="278" width="236" height="148" rx="8" fill="#F7F2E7" stroke="#9A9081" stroke-width="1.6"/>
+<text x="948" y="302" font-size="9" font-weight="700" letter-spacing="1.3" fill="#646A72">ARTIFACTS ON DISK</text>
+<text x="948" y="322" font-size="11" fill="#23262A" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">exports/{module}/{object}/</text>
+<text x="948" y="342" font-size="9.5" fill="#3B4149" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">{object}_{ts}.csv</text>
+<text x="948" y="358" font-size="9.5" fill="#3B4149" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">{object}_{ts}.manifest.json</text>
+<text x="948" y="374" font-size="9.5" fill="#646A72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">{object}_{ts}.skipped.jsonl</text>
+<line x1="948" y1="384" x2="1136" y2="384" stroke="#C6BDAE" stroke-width="1"/>
+<text x="948" y="398" font-size="9" fill="#646A72">csv from extract/writer.py, manifest from cli.py</text>
+<text x="948" y="412" font-size="9" fill="#646A72">each child relation gets its own folder too</text>
+
+<rect x="924" y="473" width="236" height="148" rx="8" fill="#FDFBF6" stroke="#5C6470" stroke-width="2"/>
+<line x1="936" y1="487" x2="936" y2="607" stroke="#2F343A" stroke-width="5" stroke-linecap="round"/>
+<text x="952" y="501" font-size="9" font-weight="700" letter-spacing="1.3" fill="#454B54">TARGET</text>
+<text x="952" y="524" font-size="15.5" font-weight="600" fill="#23262A">Maximo / MAS</text>
+<text x="952" y="544" font-size="10.5" fill="#3B4149">authenticated REST API</text>
+<rect x="952" y="553" width="82" height="22" rx="11" fill="#EFEAE0" stroke="#9A9081" stroke-width="1"/>
+<text x="993" y="568" font-size="9.5" fill="#3B4149" text-anchor="middle">REST MBO</text>
+<rect x="1042" y="553" width="60" height="22" rx="11" fill="#EFEAE0" stroke="#9A9081" stroke-width="1"/>
+<text x="1072" y="568" font-size="9.5" fill="#3B4149" text-anchor="middle">OSLC</text>
+<text x="952" y="595" font-size="9" fill="#646A72">identical box, identical code path —</text>
+<text x="952" y="608" font-size="9" fill="#646A72">only the credentials differ</text>
+
+<rect x="924" y="633" width="236" height="46" rx="6" fill="#EFEAE0" stroke="#C6BDAE" stroke-width="1"/>
+<text x="936" y="651" font-size="10" fill="#3B4149" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">config.py</text>
+<text x="996" y="651" font-size="9.5" fill="#646A72">the same loader, again</text>
+<text x="936" y="667" font-size="9" fill="#646A72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">--env MAXDEMOTST → env/.env.maxdemotst</text>
+
+<line x1="276" y1="396" x2="334" y2="396" stroke="#A8501C" stroke-width="2" marker-end="url(#ar)"/>
+<text x="306" y="389" font-size="8.5" fill="#A8501C" text-anchor="middle">GET</text>
+
+<line x1="866" y1="326" x2="920" y2="326" stroke="#A8501C" stroke-width="2" marker-end="url(#ar)"/>
+<text x="894" y="319" font-size="8.5" fill="#A8501C" text-anchor="middle">stream</text>
+
+<line x1="866" y1="550" x2="920" y2="550" stroke="#454B54" stroke-width="2" stroke-dasharray="6 3" marker-end="url(#as)"/>
+<text x="894" y="543" font-size="8.5" fill="#454B54" text-anchor="middle">upsert</text>
+
+<rect x="40" y="700" width="1120" height="64" rx="8" fill="#EFEAE0" stroke="#C6BDAE" stroke-width="1"/>
+
+<line x1="62" y1="722" x2="98" y2="722" stroke="#A8501C" stroke-width="2.2" marker-end="url(#ar)"/>
+<text x="108" y="726" font-size="10.5" fill="#3B4149">EXPORT — read the source, write CSV</text>
+
+<line x1="330" y1="722" x2="366" y2="722" stroke="#454B54" stroke-width="2.2" stroke-dasharray="6 3" marker-end="url(#as)"/>
+<text x="376" y="726" font-size="10.5" fill="#3B4149">IMPORT — read CSV, write the target</text>
+
+<line x1="600" y1="722" x2="636" y2="722" stroke="#8A8275" stroke-width="1.6" stroke-dasharray="2 4" marker-end="url(#ag)"/>
+<text x="646" y="726" font-size="10.5" fill="#3B4149">the YAML schema drives both paths</text>
+
+<text x="62" y="749" font-size="10" fill="#646A72">Source and target are the same kind of environment reached by the same code — the only thing that changes between them is which .env file the --env flag selects.</text>
+
+</g>
+</svg>

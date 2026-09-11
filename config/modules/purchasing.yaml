@@ -1,0 +1,124 @@
+# Purchasing pilot module.
+# Field lists are a realistic starting point, not a verified per-environment inventory —
+# confirm against the source environment with `migrate discover` before a production run.
+
+module: purchasing
+description: "Vendors, purchase requisitions, purchase orders and material receipts."
+
+objects:
+  - name: company
+    maximo_object: COMPANY
+    access:
+      # mxapicompany is NOT published on maxdemo ("Unknown Object", BMXAA4216E) --
+      # mxapivendor is the real OSLC object structure there, confirmed live
+      # 2026-09-11 with all 6 fields below present. Kept as the default here
+      # since MXAPIVENDOR is IBM's standard published OS for this data anyway.
+      oslc_resource: mxapivendor
+      rest_mbo_table: company
+      prefer: oslc
+    key_fields: [company, orgid]
+    fields: [company, orgid, name, type, currencycode, disabled]
+    where: null
+    children: []
+
+  - name: purchase_requisition
+    maximo_object: PR
+    access:
+      oslc_resource: mxapipr
+      rest_mbo_table: pr
+      prefer: oslc
+    key_fields: [prnum, siteid]
+    fields:
+      [prnum, siteid, orgid, description, status, requestedby, requireddate, totalcost, priority]
+    where: null
+    children:
+      - name: pr_line
+        maximo_object: PRLINE
+        relation_attribute: prline
+        foreign_key: [prnum, siteid]
+        key_fields: [prnum, siteid, prlinenum]
+        fields:
+          [prlinenum, itemnum, description, orderqty, orderunit, unitcost, linecost, storeloc, linetype]
+        children: []
+
+  - name: purchase_order
+    maximo_object: PO
+    access:
+      oslc_resource: mxapipo
+      rest_mbo_table: po
+      prefer: oslc
+    key_fields: [ponum, siteid]
+    fields:
+      [ponum, siteid, orgid, description, status, vendor, orderdate, totalcost, currencycode, revisionnum]
+    where: null
+    children:
+      - name: po_line
+        maximo_object: POLINE
+        relation_attribute: poline
+        foreign_key: [ponum, siteid]
+        key_fields: [ponum, siteid, polinenum]
+        fields:
+          [polinenum, itemnum, description, orderqty, orderunit, unitcost, linecost, storeloc, linetype]
+        children: []
+
+  - name: receipt
+    maximo_object: MATRECTRANS
+    access:
+      # mxapireceipt IS published on maxdemo (confirmed live 2026-09-11 --
+      # unlike this comment's earlier claim that no OSLC resource existed)
+      # -- but it returns exactly one phantom href-only member with NO
+      # oslc.select, and zero members with ANY oslc.select at all (even a
+      # single field). Unclear whether MATRECTRANS is genuinely empty in
+      # this demo tenant or the OS is a stub; the field list below is
+      # therefore UNVERIFIED shape, not just unverified data, on maxdemo.
+      # rest_mbo_table stays populated for other environments, but REST MBO
+      # is OIDC-gated on maxdemo like everywhere else in this tool, so oslc
+      # is the default regardless.
+      oslc_resource: mxapireceipt
+      rest_mbo_table: matrectrans
+      prefer: oslc
+    # matrectransid is a source-system surrogate, so the idempotency lookup on load is weak here.
+    # Receipts are append-only history in practice — re-running a load can duplicate rows.
+    key_fields: [matrectransid, siteid]
+    fields:
+      [matrectransid, siteid, itemnum, ponum, polinenum, transdate, quantity, issuetype, tostoreloc, linecost]
+    where: null
+    children: []
+
+  - name: rfq
+    maximo_object: RFQ
+    access:
+      # UNVERIFIED on maxdemo: mxapirfq returns "Unknown Object" there
+      # (BMXAA4216E) as of 2026-09-11 -- RFQ doesn't appear to be a
+      # published/enabled object structure on this particular demo tenant
+      # (also tried mxrfq, mxapirfqvendor, mxapirfqmaster, mxapiquote -- all
+      # not found or unauthorized). Kept here using IBM's standard published
+      # OS name for environments where Request for Quotation IS enabled;
+      # confirm with `migrate discover --object rfq` before relying on it.
+      # rest_mbo_table deliberately left unset: an unverified guessed REST MBO
+      # table name would otherwise become the client's automatic fallback
+      # after the OSLC failure, and REST MBO is OIDC-gated on maxdemo like
+      # everywhere else in this tool -- that fallback attempt raises a raw
+      # JSON-decode error which SILENTLY REPLACES the clean, informative
+      # "Unknown Object" error from the real (OSLC) attempt. Leaving no
+      # fallback configured keeps the actual error visible.
+      oslc_resource: mxapirfq
+      prefer: oslc
+    key_fields: [rfqnum, siteid]
+    fields: [rfqnum, siteid, orgid, description, status, requireddate, totalcost, revisionnum]
+    where: null
+    children:
+      - name: rfq_line
+        maximo_object: RFQLINE
+        relation_attribute: rfqline
+        foreign_key: [rfqnum, siteid]
+        key_fields: [rfqnum, siteid, rfqlinenum]
+        fields:
+          [rfqlinenum, itemnum, description, orderqty, orderunit, unitcost, linecost, linetype]
+        children: []
+
+# Vendors first (referenced by PR/PO/RFQ), requisitions before the RFQs/POs
+# they source, RFQ before the PO it may convert into, receipts last because
+# they reference PO lines.
+extract_order: [company, purchase_requisition, rfq, purchase_order, receipt]
+load_order: [company, purchase_requisition, rfq, purchase_order, receipt]

@@ -1,0 +1,3 @@
+# Drop custom (non-OOB) object-structure YAML here.
+# Same schema as config/modules/*.yaml — see _template.yaml.
+# Loaded automatically by ObjectRegistry (see src/maxmig/model/registry.py).
