@@ -321,3 +321,21 @@ def test_payload_is_valid_json_with_action_first():
     payload = po.to_payload()
     assert list(payload)[0] == "_action"
     assert json.loads(json.dumps(payload))["description"] == 'quote " and \\ backslash'
+
+
+def test_datadict_reads_nested_mxapimaxobject_rows(requests_mock):
+    import requests
+
+    from maxmig.mxl.datadict import OOB_DICTIONARY_OS, fetch_from_maximo
+
+    route = requests_mock.get(
+        "https://mx.example.com/maximo/api/os/MXAPIMAXOBJECT",
+        json={"member": [{"objectname": "PO", "maxattribute": [
+            {"attributename": "TOTALCOST", "maxtype": "AMOUNT", "scale": 2, "userdefined": False},
+            {"attributename": "EX_BUDGET", "maxtype": "DECIMAL", "scale": 2, "userdefined": True},
+        ]}]},
+    )
+    dd = fetch_from_maximo(requests.Session(), "https://mx.example.com/maximo", {}, ["PO"], OOB_DICTIONARY_OS)
+    assert dd.lookup("PO", "TOTALCOST").maxtype == "AMOUNT"
+    assert dd.lookup("PO", "EX_BUDGET").user_defined
+    assert "maxattribute{" in route.last_request.qs["oslc.select"][0]

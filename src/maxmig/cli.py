@@ -47,7 +47,7 @@ from maxmig.mxl.fill import (
 )
 from maxmig.mxl.formula import Formula, FormulaError
 from maxmig.mxl.scripting import NO_SCRIPT, ScriptContext, ScriptError, load_script
-from maxmig.mxl.datadict import DEFAULT_DICTIONARY_OS, DataDictionary, fetch_from_maximo
+from maxmig.mxl.datadict import DEFAULT_DICTIONARY_OS, OOB_DICTIONARY_OS, DataDictionary, fetch_from_maximo
 from maxmig.mxl.runner import RunOptions, run_nodes, run_query, run_sheet
 from maxmig.mxl.service import MxRestService
 from maxmig.mxl.sheet import LOAD_ACTIONS, SheetFormatError, load_sheet, normalize_action
@@ -1176,10 +1176,19 @@ def datadict_refresh_cmd(env_prefix, env_file, resource, modules, config_dirs, o
     try:
         datadict = fetch_from_maximo(client.session, client.env.manage_url, client.headers, objects or None, resource)
     except Exception as exc:
-        raise click.ClickException(
-            f"could not read MAXATTRIBUTE through {resource}: {exc}. Create an object structure over "
-            f"MAXATTRIBUTE (or let MxLoader create {DEFAULT_DICTIONARY_OS}) and pass --resource"
-        ) from exc
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if resource != DEFAULT_DICTIONARY_OS or status != 404:
+            raise click.ClickException(f"could not read MAXATTRIBUTE through {resource}: {exc}") from exc
+        click.echo(f"{resource} not published here; falling back to out-of-the-box {OOB_DICTIONARY_OS}")
+        try:
+            datadict = fetch_from_maximo(
+                client.session, client.env.manage_url, client.headers, objects or None, OOB_DICTIONARY_OS
+            )
+        except Exception as exc2:
+            raise click.ClickException(
+                f"could not read MAXATTRIBUTE through {resource} or {OOB_DICTIONARY_OS}: {exc2}. "
+                "Pass --resource naming an object structure that exposes MAXATTRIBUTE"
+            ) from exc2
     target = output or _default_datadict_path(env_config)
     count = datadict.to_csv(target)
     custom = sum(1 for t in datadict.entries.values() if t.user_defined)

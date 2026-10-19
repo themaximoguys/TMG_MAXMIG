@@ -72,6 +72,14 @@ def error_message(body: Any) -> str:
     return ""
 
 
+def normalize_order_by(order_by: str) -> str:
+    """`assetnum,-changedate` -> `+assetnum,-changedate`. Maximo rejects an
+    oslc.orderBy term without a direction (BMXAA8744E, confirmed on MAXDEMO),
+    while a bare attribute is the natural thing to type in cell E1."""
+    terms = [t.strip() for t in order_by.split(",") if t.strip()]
+    return ",".join(t if t[0] in "+-" else f"+{t}" for t in terms)
+
+
 def parse_bulk_response(body: Any, expected: int) -> list[RecordResult]:
     items = body if isinstance(body, list) else _ci(body, "member") or []
     results: list[RecordResult] = []
@@ -148,7 +156,7 @@ class MxRestService:
         if where:
             params["oslc.where"] = where
         if order_by:
-            params["oslc.orderBy"] = order_by
+            params["oslc.orderBy"] = normalize_order_by(order_by)
         for key, value in parse_qsl(directives or "", keep_blank_values=True):
             params[key] = value
 

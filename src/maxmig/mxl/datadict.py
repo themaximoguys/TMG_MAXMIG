@@ -111,6 +111,12 @@ def _first(row: dict, *names: str):
     return None
 
 
+# Out-of-the-box object structure over MAXOBJECT with MAXATTRIBUTE as a child —
+# present on stock Manage (confirmed on MAXDEMO), so no MxLoader-created OS is needed.
+OOB_DICTIONARY_OS = "MXAPIMAXOBJECT"
+_NESTED_FIELDS = ("attributename", "maxtype", "scale", "userdefined")
+
+
 def fetch_from_maximo(
     session: requests.Session,
     base_url: str,
@@ -127,10 +133,17 @@ def fetch_from_maximo(
     names = sorted({o.upper() for o in objects or [] if o})
     if names:
         where = "objectname in [" + ",".join(f'"{n}"' for n in names) + "]"
+    nested = resource.upper() == OOB_DICTIONARY_OS
+    select = f"objectname,maxattribute{{{','.join(_NESTED_FIELDS)}}}" if nested else "*"
     result = DataDictionary()
-    for row in iter_oslc(session, base_url, headers, resource, page_size=page_size, where=where, select="*"):
-        obj, attr, maxtype = _first(row, "objectname"), _first(row, "attributename"), _first(row, "maxtype")
-        if obj and attr and maxtype:
-            user_defined = _first(row, "userdefined")
-            result.add(obj, attr, maxtype, _first(row, "scale") or 0, user_defined in (True, 1, "1", "true", "Y"))
+    for row in iter_oslc(session, base_url, headers, resource, page_size=page_size, where=where, select=select):
+        # MXAPIMAXOBJECT nests the attributes under each object; MxLoader's own
+        # MXL_MAXATTRIBUTECFG returns one flat MAXATTRIBUTE row per attribute.
+        children = row.get("maxattribute")
+        attr_rows = [dict(c, objectname=_first(row, "objectname")) for c in children] if isinstance(children, list) else [row]
+        for attr_row in attr_rows:
+            obj, attr, maxtype = _first(attr_row, "objectname"), _first(attr_row, "attributename"), _first(attr_row, "maxtype")
+            if obj and attr and maxtype:
+                user_defined = _first(attr_row, "userdefined")
+                result.add(obj, attr, maxtype, _first(attr_row, "scale") or 0, user_defined in (True, 1, "1", "true", "Y"))
     return result

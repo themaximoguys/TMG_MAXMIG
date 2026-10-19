@@ -173,3 +173,9 @@ def test_run_nodes_sends_nested_children_in_one_record(requests_mock):
     assert json.loads(route.last_request.text) == [
         {"_action": "AddChange", "ponum": "1", "poline": [{"polinenum": "1"}, {"polinenum": "2"}]}
     ]
+
+
+def test_order_by_terms_get_a_direction():
+    from maxmig.mxl.service import normalize_order_by
+
+    assert normalize_order_by("assetnum, -changedate,+siteid") == "+assetnum,-changedate,+siteid"
