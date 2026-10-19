@@ -14,6 +14,7 @@ import json
 from collections import Counter
 from dataclasses import asdict
 from datetime import datetime, timezone
+from itertools import islice
 from pathlib import Path
 from typing import Iterable
 
@@ -197,6 +198,7 @@ def _export_one(
     skip_errors: bool,
     checkpoint_mode: bool = False,
     resume: bool = False,
+    limit: int = 0,
 ) -> ObjectExportResult:
     """Fetch and write one object structure (its own CSV plus one per child
     relation), its manifest, and its skip log if anything was skipped. Prints
@@ -210,7 +212,7 @@ def _export_one(
     checkpoint: ExportCheckpoint | None = None
 
     try:
-        client = MaximoClient(env_config)
+        client = MaximoClient(env_config, page_size=min(limit, 250)) if limit else MaximoClient(env_config)
         if checkpoint_mode:
             checkpoint = _open_checkpoint(
                 module, object_name, obj_def, env_config, row_filter, out, timestamp, client.page_size, resume
@@ -241,6 +243,8 @@ def _export_one(
             rows = client.fetch_object(
                 obj_def, filter=row_filter, skip_errors=skip_errors, on_skip=skipped.append
             )
+            if limit:
+                rows = islice(rows, limit)  # stops paging once `limit` top-level rows are in
             results = write_object_tree(rows, obj_def, out, module, timestamp)
     except CheckpointError as exc:
         raise click.ClickException(str(exc)) from exc
@@ -273,6 +277,7 @@ def _export_one(
                 for name, result in results.items()
                 if name != object_name
             },
+            **({"limit": limit} if limit else {}),
             "skipped_count": len(skipped),
             "skipped_log": str(skipped_log_path) if skipped_log_path else None,
             **(
@@ -390,6 +395,15 @@ def _export_one(
         "omitted, objects whose export already finished are skipped"
     ),
 )
+@click.option(
+    "--limit",
+    type=click.IntRange(min=1),
+    default=None,
+    help=(
+        "Export at most N top-level records per object (with all their child rows) — "
+        "a quick smoke test of an object/environment, not a migration extract"
+    ),
+)
 def export_cmd(
     module: str,
     object_name: str | None,
@@ -406,6 +420,7 @@ def export_cmd(
     all_attributes: bool = False,
     checkpoint_mode: bool = False,
     resume: bool = False,
+    limit: int | None = None,
 ) -> None:
     """Extract one object structure to CSV — its own CSV, plus one per child
     relation (e.g. item_spec, item_structure) unless --flat is passed. With
@@ -419,6 +434,8 @@ def export_cmd(
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
 
+    if limit and (checkpoint_mode or resume):
+        raise click.ClickException("--limit can't be combined with --checkpoint/--resume")
     timestamp = datetime.now(timezone.utc).strftime(_RUN_TIMESTAMP_FORMAT)
     if resume and len(object_names) > 1:
         timestamp = _module_resume_timestamp(out, module, object_names) or timestamp
@@ -434,7 +451,7 @@ def export_cmd(
         results.append(
             _export_one(
                 module, name, obj_def, env_config, row_filter, out, timestamp, flat, skip_errors,
-                checkpoint_mode=checkpoint_mode or resume, resume=resume,
+                checkpoint_mode=checkpoint_mode or resume, resume=resume, limit=limit or 0,
             )
         )
 

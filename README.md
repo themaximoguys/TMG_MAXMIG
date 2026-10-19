@@ -2,7 +2,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-A31F34)](LICENSE)
-[![Tests: 371 passing](https://img.shields.io/badge/tests-371%20passing-0A9396?logo=pytest&logoColor=white)](tests/unit)
+[![Tests: 376 passing](https://img.shields.io/badge/tests-376%20passing-0A9396?logo=pytest&logoColor=white)](tests/unit)
 [![Status: pilot](https://img.shields.io/badge/status-pilot-CA6702)](#roadmap)
 
 An API-based data migration CLI for IBM Maximo / IBM Maximo Application Suite (MAS). One tool, driven entirely by which environment config you point it at — the same commands work whether you're migrating Maximo 7.6.1.2 → MAS 9, or moving data between two MAS environments (dev → test, client cutover, etc.).
@@ -178,6 +178,7 @@ With `--checkpoint`, pages are fetched by explicit cursor (OSLC `pageno`, REST M
 | `--env-file PATH` | Use a specific credentials file instead of the `env/.env.<prefix>` default |
 | `--config-dir PATH` | Use a different module-YAML directory (repeatable); defaults to `config/modules` + `config/custom_objects` |
 | `--out PATH` | Base output directory (default `exports/`) |
+| `--limit N` | Export at most N top-level records per object, with all their child rows. Use it for a quick smoke test of an object or environment, not for a migration extract. Recorded as `"limit"` in the manifest; can't be combined with `--checkpoint`/`--resume` |
 
 Run `./.venv/bin/migrate export --help` for the full list.
 
@@ -583,12 +584,30 @@ migrate check --module purchasing --object purchase_order   # orphans, duplicate
 migrate discover --object asset --env MAXDEMO    # probe and draft config/custom_objects/asset.discovered.yaml
 ```
 
+## Tested against MAXDEMO
+
+Every configured object has been run live against the MAXDEMO environment (2026-10-19), using `--limit 5` except where noted. All runs were reads or dry runs; **nothing has been written with `--execute` yet**.
+
+| Object | Export | Integrity check | Load dry runs (`mxl run`, `import --bulk`, per-row `import`) | Notes |
+|---|---|---|---|---|
+| `company` | 5 rows (109 unlimited) | OK | 5 validated / 5 / 5 would update | |
+| `storeroom` | 5 rows (22 unlimited) | OK | 5 / 5 / 5 would update | |
+| `item` (+ `item_spec`, `item_structure`) | 5 rows; 0 child rows | OK | 5 / 5 / 5 would update | MAXDEMO's `MXAPIITEM` doesn't expose `itemspec` or `itemstructure` (its only relations are `invvendor`, `itemchangestatus`, `itemcondition`), so the child CSVs are empty there |
+| `inventory_balance` (+ `invbalances`, `invcost`) | 5 rows; 6 + 5 child rows | OK | 5 / 5 / 5 would update | Blank `binnum`/`lotnum` are valid for the default bin and non-lotted items, so they're declared `optional_key_fields` |
+| `purchase_requisition` (+ `pr_line`) | 5 rows; 13 lines | OK | 5 / 5 / 5 would update | |
+| `purchase_order` (+ `po_line`) | 90 rows at BEDFORD; 140 lines | Fails: PO `B4230` has three lines all numbered `polinenum=1` | 90 / 90 | A real source-data problem the check caught. Checkpoint/resume was tested here: a failure on page 3, then `--resume`, gave byte-identical CSVs |
+| `receipt` | 0 rows | OK (empty) | not applicable | `MXAPIRECEIPT` is published but returns no data with any `oslc.select`, and `MXAPIPO` doesn't expose `matrectrans`; not verifiable on MAXDEMO |
+| `rfq` (+ `rfq_line`) | 404 | not applicable | not applicable | No RFQ object structure is published on MAXDEMO (`MXAPIRFQ` gives BMXAA4216E Unknown Object) |
+
+Also exercised live: an MxLoader `Query` sheet on `MXAPIASSET`, `mxl fill` and `mxl batch` with a hook script, `discover po`, and `datadict refresh`, which uses the out-of-the-box `MXAPIMAXOBJECT` when MxLoader's `MXL_MAXATTRIBUTECFG` isn't published (1,119 attribute types).
+
 ## Roadmap
 
 Not built yet:
 
 - Concurrency (parallel BULK requests).
 - A live `--execute` round-trip validation against a real dev→test pair.
+- Live verification of `receipt` and `rfq`, and of `item_spec`/`item_structure` child data, on an environment that publishes them.
 
 ## Project layout
 

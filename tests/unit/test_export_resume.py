@@ -302,3 +302,22 @@ def test_whole_module_resume_skips_finished_objects(setup, requests_mock):
     out = setup[2] / "purchasing"
     stamp = only(out / "company", "*.csv").stem.split("_", 1)[1]
     assert only(out / "purchase_order", "*.csv").stem.endswith(stamp)  # one run timestamp across the module
+
+
+# --------------------------------------------------------------------------- --limit
+
+
+def test_limit_caps_parent_rows_keeps_their_children_and_fetches_one_page(setup, requests_mock):
+    route = requests_mock.get(PO_URL, json=oslc_pages(POS))
+    result = export(setup, "--limit", "1")
+    assert result.exit_code == 0, result.output
+    assert route.call_count == 1 and route.last_request.qs["oslc.pagesize"] == ["1"]
+    out = setup[2] / "purchasing"
+    assert [r[0] for r in read(only(out / "purchase_order", "*.csv"))[1:]] == ["PO1"]
+    assert len(read(only(out / "po_line", "*.csv"))) == 3  # header + PO1's two lines
+    assert json.loads(only(out / "purchase_order", "*.manifest.json").read_text())["limit"] == 1
+
+
+def test_limit_rejects_checkpoint(setup):
+    result = export(setup, "--limit", "5", "--checkpoint")
+    assert result.exit_code != 0 and "--limit" in result.output

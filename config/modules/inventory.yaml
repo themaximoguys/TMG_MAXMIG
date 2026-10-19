@@ -71,6 +71,7 @@ objects:
         relation_attribute: invbalances
         foreign_key: [itemnum, itemsetid, location, siteid]
         key_fields: [itemnum, itemsetid, location, siteid, binnum, lotnum]
+        optional_key_fields: [binnum, lotnum]  # blank for the default bin / non-lotted items
         fields: [binnum, lotnum, curbal, physcnt, physcntdate, reconciled, stagedcurbal]
         children: []
 

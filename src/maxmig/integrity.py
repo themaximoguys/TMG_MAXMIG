@@ -158,6 +158,7 @@ def _scan_csv(
         return False
 
     key_fields = list(node.key_fields)
+    optional_keys = set(getattr(node, "optional_key_fields", None) or ())
     with path.open(newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         header = set(reader.fieldnames or [])
@@ -175,7 +176,7 @@ def _scan_csv(
         for row_number, row in enumerate(reader, start=1):
             count = row_number
             key = tuple(row.get(f) or "" for f in key_fields)
-            blank = tuple(f for f, v in zip(key_fields, key) if not v.strip())
+            blank = tuple(f for f, v in zip(key_fields, key) if not v.strip() and f not in optional_keys)
             if blank:
                 report.blank_keys.append(BlankKey(name, path, row_number, blank))
             elif key in seen:

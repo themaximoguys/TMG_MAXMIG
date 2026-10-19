@@ -128,3 +128,17 @@ def test_relation_absent_from_mapping_and_missing_column(tmp_path):
     reasons = {m.relation: m.reason for m in report.missing}
     assert reasons["pocost"] == "no CSV path given"
     assert "siteid" in reasons["poline"]
+
+
+def test_optional_key_fields_may_be_blank(tmp_path):
+    from types import SimpleNamespace
+
+    from maxmig.integrity import check_tree
+
+    path = tmp_path / "bal.csv"
+    path.write_text("itemnum,lotnum\nA,\nA,L1\nB,\n", encoding="utf-8")
+    node = SimpleNamespace(name="bal", key_fields=["itemnum", "lotnum"], optional_key_fields=["lotnum"], children=[])
+    report = check_tree(node, {"bal": path})
+    assert report.ok, report.summary_lines()
+    node.optional_key_fields = []
+    assert not check_tree(node, {"bal": path}).ok

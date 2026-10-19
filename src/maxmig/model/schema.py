@@ -104,6 +104,9 @@ class RelationDef(_AttributeSet):
     relation_attribute: str
     foreign_key: str | list[str]
     key_fields: list[str] = Field(min_length=1)
+    # Key fields that may legitimately be blank (e.g. lotnum for non-lotted items):
+    # still part of the key, but a blank value isn't an integrity error.
+    optional_key_fields: list[str] = Field(default_factory=list)
     children: list[RelationDef] = Field(default_factory=list)
 
 
@@ -121,6 +124,9 @@ class ObjectDef(_AttributeSet):
     maximo_object: str | None = None
     access: AccessDef
     key_fields: list[str] = Field(min_length=1)
+    # Key fields that may legitimately be blank (e.g. lotnum for non-lotted items):
+    # still part of the key, but a blank value isn't an integrity error.
+    optional_key_fields: list[str] = Field(default_factory=list)
     where: str | None = None
     children: list[RelationDef] = Field(default_factory=list)
 

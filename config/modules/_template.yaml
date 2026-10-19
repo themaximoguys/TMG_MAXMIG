@@ -64,6 +64,10 @@ objects:
     # across environments (business keys, never internal surrogate IDs), and is
     # written as the leading columns of the CSV.
     key_fields: [myobjectnum, siteid]
+    # Optional: key fields that may legitimately be blank (e.g. lotnum for
+    # non-lotted items). They stay in the key, but `migrate check` won't
+    # flag a blank value as an error.
+    # optional_key_fields: []
 
     # Attributes to extract and load, in CSV column order after key_fields and
     # any foreign_key columns. Values round-trip as the raw API strings — no
