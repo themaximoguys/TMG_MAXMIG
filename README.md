@@ -2,7 +2,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-A31F34)](LICENSE)
-[![Tests: 163 passing](https://img.shields.io/badge/tests-163%20passing-0A9396?logo=pytest&logoColor=white)](tests/unit)
+[![Tests: 371 passing](https://img.shields.io/badge/tests-371%20passing-0A9396?logo=pytest&logoColor=white)](tests/unit)
 [![Status: pilot](https://img.shields.io/badge/status-pilot-CA6702)](#roadmap)
 
 An API-based data migration CLI for IBM Maximo / IBM Maximo Application Suite (MAS). One tool, driven entirely by which environment config you point it at — the same commands work whether you're migrating Maximo 7.6.1.2 → MAS 9, or moving data between two MAS environments (dev → test, client cutover, etc.).
@@ -11,7 +11,7 @@ Pilot scope: **Inventory Management** and **Purchasing** modules. The design is 
 
 ![MaxMig architecture: a YAML config layer drives both an export path (source Maximo/MAS environment through cli.py, api/client.py and extract/writer.py out to timestamped CSV and manifest files on disk) and an import path (CSV back through load/reader.py and load/importer.py, then out through the same api/client.py to a target environment). Source and target are the same kind of environment reached by the same code — only the .env file selected by --env differs.](docs/images/architecture.svg)
 
-**Current status:** the `export` side works end-to-end (extract from a Maximo/MAS environment → CSV + manifest). `import` (load a CSV into a target environment, create-or-update by natural key) also works, dry-run by default — see [Importing data](#importing-data) below; its create/update paths are unit-tested against mocked HTTP but haven't yet been exercised with a live `--execute` run. Checkpointing/resume for very large tables and custom-object discovery are not built yet — see [Roadmap](#roadmap) and [`docs/DESIGN.md`](docs/DESIGN.md) for the full design.
+**Current status:** `export` works end-to-end against live environments. `import` works in two modes, both dry-run by default: per-row create-or-update by natural key, and `--bulk`, which uses the MxLoader engine (child relations re-nested, OSLC BULK batches, typed values). A MxLoader-compatible sheet runner (`migrate mxl`) with FillData formulas, RunBatch, and Python hook scripts in place of MxLoader's VBA macros, custom-attribute support, checkpoint/resume for large exports, `discover`, `check`, `status`, and `list-*` are built too. All write paths are unit-tested against mocked HTTP; **none has yet been exercised with a live `--execute` run**, so treat your first real `--execute` on any object as the validation. See [Roadmap](#roadmap) for what's still open.
 
 ## Documentation
 
@@ -150,6 +150,26 @@ migrate export --module purchasing --object purchase_order --env MAXDEMO \
 `--site` and a `--filter siteid=...` condition can't both be set (ambiguous — pick one). Filter values can't contain a literal `"` (rejected rather than guessed at escaping, since that's exactly the kind of value that could otherwise turn a filter into an always-true query).
 
 **`OR` can be unreliable depending on whitespace and parentheses**, on top of Maximo's own OSLC query parser — behavior here varies enough (some environments parse it fine, others reject `field="A" or field="B"` depending on the exact spacing/nesting) that it's not worth memorizing rules for. Prefer `field in ["A","B"]` for "one of several values" — it's unambiguous and consistently supported — and reserve `or` for cases `in` genuinely can't express.
+
+### Resuming a very large export (`--checkpoint` / `--resume`)
+
+For a table big enough that a dropped connection hours in would hurt (e.g. `inventory_balance`), add `--checkpoint`:
+
+```bash
+migrate export --module inventory --object inventory_balance --env MAXDEMO --checkpoint
+# ... fails on page 3,812 ...
+migrate export --module inventory --object inventory_balance --env MAXDEMO --resume
+```
+
+With `--checkpoint`, pages are fetched by explicit cursor (OSLC `pageno`, REST MBO `_rsStart`) and, after every fully written page, `{object}_{timestamp}.checkpoint.json` records the cursor plus each output file's size and row count (parent and every child relation). If the export fails, its `.partial` files and the checkpoint are kept, and the error says how many pages were saved.
+
+`--resume` picks up the newest checkpoint for that object: it truncates each partial file back to its last checkpointed size (dropping a half-written page), continues from the next page with the same API and the same run timestamp, then renames the files and writes the manifest exactly like an uninterrupted run (plus `"resumed": true` and `"resume_count"`). The checkpoint is deleted on success.
+
+- The resume must use the same object definition, filter (`--site`/`--filter`/`--where`), and env; anything else is rejected rather than splicing two different queries into one file.
+- `--skip-errors` and `--all-attributes` both survive a resume (skipped rows and discovered custom columns are part of the checkpoint).
+- With `--object` omitted, `--resume` reuses the interrupted module run's timestamp and skips objects that already have a manifest for it.
+- `--resume` with no checkpoint simply starts a fresh checkpointed export.
+- A resume assumes the source rows don't move between pages in the meantime: Maximo pages by position, so rows inserted or deleted in the source during the outage can shift page boundaries. For a cutover extract, freeze the source first, as you would anyway.
 
 ### Other flags
 
@@ -406,19 +426,169 @@ Every row writes a `{key, action, href, error}` line to `{object}_{timestamp}.im
 
 **Constraints:**
 - OSLC objects only (the object needs an `oslc_resource` configured) — no REST MBO write path exists.
-- One object per run — unlike `export`, there's no whole-module `import` yet.
-- No nested-child writes — only an object's own fields import; `invbalances`/`item_spec`-style children aren't created/updated (their CSVs would need their own `import` runs against their own object structures, which this tool doesn't expose as importable objects yet).
+- Omit `--object` to import every object in the module's `load_order`; the run stops at the first object with failures.
+- The default per-row mode writes only an object's own fields. Use `--bulk` (below) to load child relations nested in their parent.
 - CSV values are always strings; whether Maximo's write path coerces them to an attribute's real type (NUMBER, BOOLEAN) hasn't been confirmed with a live `--execute` run as of this writing — treat your first real `--execute` on any given object as validating that, not as already-settled.
 - A create that fails after possibly reaching the server (timeout, 5xx) is automatically re-checked by natural key before being reported as failed, so re-running an import is safe from double-creates — but is **not** wrapped in this tool's usual retry/backoff (only the natural-key lookup GET is retried); a failed create or update is reported once, not retried in-process.
 
+### Bulk import with child relations (`--bulk`, MxLoader engine)
+
+```bash
+# Dry run: builds and type-checks every nested payload, sends nothing
+migrate import --module purchasing --object purchase_order --env MAXDEMOTGT --bulk
+
+# Write: PO headers + their po_line rows in one BULK record per PO, 50 POs per request
+migrate import --module purchasing --object purchase_order --env MAXDEMOTGT --bulk --execute
+
+# Every object in the module, in load_order
+migrate import --module inventory --env MAXDEMOTGT --bulk --execute
+```
+
+`--bulk` reads the parent CSV plus every relation CSV **from the same export run** (matching timestamp). It nests the child rows under their parent by foreign key and POSTs batches with `x-method-override: BULK`. Each record carries `_action`, and Maximo returns a per-record status, so one bad record fails alone while the rest of the batch commits. Before sending, the CSVs go through the referential-integrity check.
+
+| Flag | Meaning (MxLoader equivalent) |
+|---|---|
+| `--action AddChange\|Add\|Change\|Delete` | Sheet action (cell C1). Default `AddChange`. `Sync` is refused over REST, same as MxLoader |
+| `--batch-size N` | Objects per request; `0` = all in one (*Batch size*) |
+| `--continue-on-error` | Keep going after a failed batch (*Stop on error = False*) |
+| `--start-row N` | Resume from parent CSV data row N (*resume from last row in error*) |
+| `--datadict FILE` | Attribute types; defaults to `config/datadict/<env>.csv` if refreshed |
+| `--timezone +00:00` | Appended to DATETIME values that don't carry an offset |
+
+`--start-row` also works without `--bulk`. A stopped run prints the row to resume from, and the import-result JSON records it as `resume_row`.
+
+## MxLoader-compatible sheets (`migrate mxl`)
+
+`src/maxmig/mxl/` is a port of MxLoader's VBA architecture, module by module: MxSheet, ConvSheetToNode/ConvNodeToSheet, MxNode, AdjustVal, MxAttrCfg, MxMifService (REST), and MxRunSync/MxRunQuery. It reproduces MxLoader's behaviour; none of its code or data is copied, because MxLoader is licensed for non-commercial use only. A sheet that works in MxLoader works here too. The layout:
+
+```
+row 1:  A=object structure  B=main object  C=action  D=where  E=order by  F=OSLC directives
+row 2:  PONUM | SITEID | EX_BUDGET | POLINE.POLINENUM | POLINE.ORDERQTY | [POID] | [RESULT]
+row 3+: data. Consecutive rows with identical parent values are one parent; REL.ATTR columns are its children
+```
+
+```bash
+migrate mxl run assets.xlsx --sheet Assets --env MAXDEMO              # dry run: validates every payload
+migrate mxl run assets.xlsx --sheet Assets --env MAXDEMO --execute    # writes [RESULT] and [ID] columns back
+migrate mxl run query.csv --env MAXDEMO                                # action Query: fills the sheet
+migrate mxl template --module inventory --object item --output item.xlsx
+migrate mxl from-export --module purchasing --object purchase_order --output po.xlsx  # export -> editable sheet
+```
+
+Sheets can be `.csv` files or `.xlsx`/`.xlsm` workbooks; workbooks need the `excel` extra (`pip install -e ".[excel]"`). The port has a few deliberate differences from MxLoader:
+- Sibling child relations (e.g. `POLINE.*` next to `POTERM.*`) nest correctly. MxLoader nests the second relation under the first.
+- Writes are dry-run unless you pass `--execute`.
+- Results go to every sheet row of a multi-row object, not just its first row.
+- Only the REST service is supported, not the legacy MIF OS/XML service.
+- A `[ERROR]` column (MxLoader's error-only virtual attribute) is filled for failed rows and blanked for successful ones.
+
+### Formulas instead of Excel (`migrate mxl fill`)
+
+MxLoader leaves data transformation to Excel: reference data sits in another worksheet, row 3 of the MxLoader sheet holds formulas, and the *FillData* macro drags that row down once per source row. `migrate mxl fill` does the same thing headless, with the same formula syntax:
+
+```bash
+# an MxLoader workbook: row 3 holds formulas, D1 names the source worksheet, other sheets are VLOOKUP tables
+migrate mxl fill assets.xlsx --sheet Assets --output assets_filled.xlsx
+
+# or a reviewable mapping file
+migrate mxl fill mappings/assets.yaml --output assets.csv
+migrate mxl run assets.csv --env MAXDEMO              # then load it as usual
+```
+
+```yaml
+# mappings/assets.yaml
+object_service: MXAPIASSET
+object: ASSET
+action: AddChange
+source: legacy/assets.csv               # or legacy.xlsx:Assets
+lookups:
+  LOCMAP: legacy/location_map.csv       # first column is the key
+filter: '=[Status] <> "SCRAPPED"'       # optional: drop rows where this is FALSE
+script: transforms.py                   # optional: see "Hook scripts" below
+columns:
+  ASSETNUM: '=CONCATENATE("PUMP", RIGHT([Asset], 3))'
+  SITEID: BEDFORD                       # constants are copied to every row
+  DESCRIPTION: '=PROPER([Description])'
+  LOCATION: '=VLOOKUP([Location], "LOCMAP", "NEWLOC", FALSE)'
+  "[ASSETUID]": ""
+```
+
+Source columns are `[Any Header]` or a bare `Name`, case-insensitive. Operators are `&`, `+ - * /`, and `= <> < > <= >=`, with Excel precedence. Functions: `CONCATENATE`/`CONCAT`, `TEXTJOIN`, `LEFT`, `RIGHT`, `MID`, `LEN`, `UPPER`, `LOWER`, `PROPER`, `TRIM`, `REPLACE`, `SUBSTITUTE`, `REPT`, `FIND`, `SEARCH`, `EXACT`, `TEXT` (zero-padding, decimals, dates), `VALUE`, `ROUND`, `INT`, `ABS`, `MIN`, `MAX`, `SUM`, `TODAY`, `NOW`, `DATEVALUE`, `IF`, `IFS`, `SWITCH`, `IFERROR`, `AND`, `OR`, `NOT`, `ISBLANK`, `ISNUMBER`, `COALESCE`, `NULL()` (MxLoader's `~NULL~`), and `VLOOKUP(value, "TABLE", column-number-or-header[, FALSE])`. `VLOOKUP` is exact-match only, because approximate matching on unsorted migration data loads wrong values silently. Formulas are parsed, never handed to Python `eval`. A bad row doesn't stop the fill: every failing source row is listed with its column and error, and nothing is written until they're all fixed.
+
+### Hook scripts (`--script`): the VBA-macro layer
+
+Anything a sheet or a formula can't express is done in MxLoader with VBA. MaxMig has the same extension point in Python: a `.py` file passed with `--script` to `mxl run`, `mxl batch`, or `mxl fill` (or named in a mapping's `script:`). Every hook is optional:
+
+```python
+from maxmig.mxl.scripting import formula
+
+@formula("PADNUM")                       # a UDF, usable in fill formulas: =PADNUM([Asset], 8)
+def padnum(value, width):
+    return str(value).zfill(int(width))
+
+def transform_row(row, ctx):             # fill: each source row; return None to drop it
+    return row
+
+def before_run(ctx): ...                 # load: once, before the first batch
+def before_record(payload, ctx):         # load: each top-level object's JSON; None skips it
+    payload.setdefault("siteid", "BEDFORD")
+    return payload
+def after_record(outcome, ctx): ...      # load: each outcome (status, message, ids, rows)
+def after_run(summary, ctx): ...         # load: once, with the counts
+```
+
+`ctx.state` is a dict that lasts for the whole run (VBA's module-level variables), and `ctx.dry_run`, `ctx.env`, and `ctx.sheet` say what's running. An exception in `transform_row`, `before_record`, or a UDF fails that row or object and is reported in `[RESULT]`; an exception in `before_run`/`after_run` aborts the run. As with enabling macros in MxLoader, a script runs with your permissions and is only ever loaded through an explicit `--script`.
+
+### Batches (`migrate mxl batch`)
+
+MxLoader's *RunBatch* sheet runs several sheets in dependency order: companies, then items, then storerooms, then balances. `migrate mxl batch` reads the same layout. Row 1 is `RunBatch`, row 2 is `Sheet, Action, Status, Query, Sync, Error, Execution Date, Execution Duration`, and each following row names a sheet: a worksheet of the same workbook, a `.csv`/`.xlsx` path relative to the batch file, or `book.xlsx:Worksheet`.
+
+```bash
+migrate mxl batch cutover.xlsx --env MAXTEST              # dry run every load sheet
+migrate mxl batch cutover.xlsx --env MAXTEST --execute    # run them; status columns written back
+```
+
+A blank `Action` uses the sheet's own C1 action. `Skip` and `ExportCsv` (writes the sheet to `Export/<name>.csv`, no Maximo call) work as in MxLoader; `ExportXml`, which is MIF-only, is rejected. A sheet with failed objects stops the batch, so later sheets never load against half-loaded prerequisites. `--continue-on-error` runs everything and reports every failure.
+
+Typed values work the same way as in MxLoader, driven by the data dictionary:
+- Numeric types are sent as JSON numbers.
+- `YORN` is sent as a boolean (anything other than 0/1/true/false is rejected).
+- `DATE`/`DATETIME`/`TIME` are normalized to ISO.
+- `~NULL~` explicitly blanks an attribute.
+- `FileTxt:/` and `FileEnc:/` inline a file's contents.
+
+## Custom attributes
+
+Custom (user-defined) attributes are supported everywhere, whether declared in config or added as needed:
+
+| Need | How |
+|---|---|
+| Permanently part of an object | `custom_fields: [ex_criticality]` in the module YAML (objects and child relations) |
+| One-off on an export | `--extra-field ex_attr` or `--extra-field po_line.ex_attr` |
+| "Give me everything, including attributes nobody listed" | `--all-attributes`, or `capture_all_attributes: true` |
+| Load a column you added to the CSV by hand | Nothing to do: every non-empty CSV column is sent on import |
+| Typed correctly on load | `migrate datadict refresh --env X` (reads MAXATTRIBUTE, custom ones included) or `field_types: {ex_cost: AMOUNT}` in YAML |
+| MxLoader sheet | Just add the column header, e.g. `EX_CRITICALITY` or `POLINE.EX_REF` |
+| Draft config for a custom object structure | `migrate discover --object CLIENT_ASSET --env X` (uses the dictionary's USERDEFINED flags to split out `custom_fields`) |
+
+`migrate datadict refresh` reads MAXATTRIBUTE through an object structure; the default is MxLoader's own `MXL_MAXATTRIBUTECFG`, and you can choose another with `--resource`. See `config/custom_objects/_example_custom_asset.yaml` for a complete example.
+
+## Inspection and checks
+
+```bash
+migrate list-modules
+migrate list-objects --module purchasing
+migrate status [--module inventory]              # newest export/import per object
+migrate check --module purchasing --object purchase_order   # orphans, duplicate/blank keys
+migrate discover --object asset --env MAXDEMO    # probe and draft config/custom_objects/asset.discovered.yaml
+```
+
 ## Roadmap
 
-Not built yet (see [`docs/DESIGN.md`](docs/DESIGN.md) for the full design):
+Not built yet:
 
-- Whole-module `import`, and importing child relations (`invbalances`, `item_spec`, etc.), not just top-level objects.
-- Checkpointing/resume for very large tables (item master, inventory balances — up to ~1M rows).
-- `migrate discover` — probe an unfamiliar/custom object structure and draft its YAML config.
-- Batched OSLC BULK-mode requests for the load side, instead of one API call per record (verified against IBM's own Maximo Manage REST API Guide as the right mechanism for the ~1M-row tables).
+- Concurrency (parallel BULK requests).
+- A live `--execute` round-trip validation against a real dev→test pair.
 
 ## Project layout
 
@@ -436,10 +606,16 @@ src/maxmig/
 │   ├── schema.py            # ObjectDef/RelationDef pydantic models
 │   └── registry.py          # loads config/modules/*.yaml
 ├── extract/
-│   └── writer.py            # streaming, atomic CSV writer(s) — object + child relations
+│   ├── writer.py            # streaming, atomic CSV writer(s) — object + child relations
+│   └── checkpoint.py        # export checkpoints for --checkpoint / --resume
 ├── load/
 │   ├── reader.py             # CSV -> row dicts, for import
 │   └── importer.py           # natural-key lookup + create-or-update (dry-run by default)
+├── mxl/                     # MxLoader engine port (sheet, node, values, datadict, convert, service, runner, bridge)
+│                            #   + formula/fill (FillData), scripting (VBA-macro hooks), batch (RunBatch)
+├── discover.py              # probe an object structure, draft its YAML
+├── integrity.py             # CSV referential-integrity check
+├── runs.py                  # list-modules / list-objects / status helpers
 └── retry.py                 # shared retry/backoff policy
 
 config/modules/              # module YAML — the config-driven object definitions

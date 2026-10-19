@@ -13,7 +13,16 @@
 > - **Dry-run inverted:** import is dry-run *by default*; `--execute` performs writes.
 >   There is no `--dry-run` flag.
 > - **Module layout** is flatter than the tree below — no `pipeline.py`,
->   `paginator.py`, `checkpoint.py`, `idempotency.py`, or `logging_setup.py`.
+>   `paginator.py`, `idempotency.py`, or `logging_setup.py`.
+>
+> Update 2026-10-19: export checkpoint/resume shipped as an opt-in
+> `migrate export --checkpoint` / `--resume` (no run-id argument). The checkpoint
+> lives next to the object's CSV as `{object}_{ts}.checkpoint.json`, not under
+> `state/`; it records byte offsets per partial file (truncated back to on
+> resume) rather than row counts, and pages by explicit OSLC `pageno` rather
+> than `nextPage` links. See `src/maxmig/extract/checkpoint.py`. The MxLoader
+> engine (`src/maxmig/mxl/`) now also covers FillData formulas, RunBatch, and
+> Python hook scripts as the equivalent of MxLoader's VBA macros.
 
 ## Context
 
@@ -21,7 +30,7 @@ Maximo teams need a repeatable, API-based way to move data between IBM Maximo en
 
 The pilot targets **Inventory Management and Purchasing** (item master, inventory balances, storerooms, companies, POs/PO lines, PRs/PR lines, receipts) because those are the modules where the largest tables live (item master, inventory balances can approach ~1M rows) and where getting the export/import mechanics right first proves the design before it's rolled out to the rest of the standard Maximo data model (assets, work orders, service requests, contracts, etc.).
 
-Working directory `/maxdata_mig` is currently empty — this is a from-scratch build (confirmed via exploration, no existing migration code anywhere on the system).
+Working directory `TMG_MAXMIG` is currently empty — this is a from-scratch build (confirmed via exploration, no existing migration code anywhere on the system).
 
 **Decisions already confirmed with the user:**
 - One generic tool, not two separate codepaths — source and target are just two environment configs. Same tool handles both the 7.6.1.2→MAS9 upgrade and any MAS9→MAS9 move.
@@ -43,7 +52,7 @@ Field-verified in `~/.claude/skills/MaximoData/ApiEndpoints.md`, `Workflows/Pull
 ### Repo structure
 
 ```
-/maxdata_mig/
+TMG_MAXMIG/
 ├── pyproject.toml               # package "maxmig", console_script "migrate"
 ├── src/maxmig/
 │   ├── cli.py                   # click-based CLI

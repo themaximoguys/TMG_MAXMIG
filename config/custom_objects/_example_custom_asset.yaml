@@ -1,0 +1,41 @@
+# ============================================================================
+# Example: a module for a client-specific object structure with custom
+# attributes. Files starting with "_" are skipped by the registry — copy to
+# config/custom_objects/<name>.yaml and edit to activate.
+#
+# Easiest way to produce one of these for a real environment:
+#   migrate datadict refresh --env CLIENTDEV          # caches MAXATTRIBUTE incl. USERDEFINED flags
+#   migrate discover --object CLIENT_ASSET --env CLIENTDEV
+#     -> config/custom_objects/client_asset.discovered.yaml (custom attributes
+#        already split into custom_fields), review, rename, done.
+# ============================================================================
+module: client_assets
+description: "Assets with client-specific custom attributes, via a custom object structure."
+
+objects:
+  - name: asset
+    maximo_object: ASSET
+    access:
+      oslc_resource: client_asset      # a custom object structure, not mxapiasset
+      rest_mbo_table: asset
+      prefer: oslc
+    key_fields: [assetnum, siteid]
+    fields: [assetnum, siteid, description, status, location, assettype]
+    custom_fields: [ex_criticality, ex_replacementcost, ex_inspected, ex_lastaudit]
+    field_types:
+      ex_replacementcost: AMOUNT
+      ex_inspected: YORN
+      ex_lastaudit: DATETIME
+    where: null
+    children:
+      - name: asset_spec
+        maximo_object: ASSETSPEC
+        relation_attribute: assetspec
+        foreign_key: [assetnum, siteid]
+        key_fields: [assetnum, siteid, assetattrid]
+        fields: [assetattrid, alnvalue, numvalue, measureunitid]
+        custom_fields: [ex_source]
+        children: []
+
+extract_order: [asset]
+load_order: [asset]

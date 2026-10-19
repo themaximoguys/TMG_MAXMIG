@@ -84,11 +84,23 @@ def fetch_oslc_page(
         data = get_json(session, url, headers, params=params, timeout=timeout)
 
     rows = data.get("member", [])
-    next_page = _extract_next_page(data.get("responseInfo", {}).get("nextPage"))
+    next_page = extract_next_page(data.get("responseInfo", {}).get("nextPage"))
     return rows, next_page
 
 
-def _extract_next_page(next_page: Any) -> str | None:
+# OSLC response keys that are API plumbing, not attributes of the record.
+PLUMBING_KEYS = frozenset({"href", "_rowstamp", "localref"})
+PLUMBING_SUFFIXES = ("_collectionref", "_imagelibref", "_localref")
+
+
+def is_plumbing_key(key: str) -> bool:
+    """Whether a key in an OSLC record is plumbing (href, _rowstamp,
+    *_collectionref, ...) rather than a real attribute — shared by
+    `discover` drafts and `export --all-attributes` so both agree."""
+    return key in PLUMBING_KEYS or key.startswith("_") or key.endswith(PLUMBING_SUFFIXES)
+
+
+def extract_next_page(next_page: Any) -> str | None:
     """Real Maximo (lean=1) nests nextPage as `{"href": "<url>"}`, not a bare
     string — non-lean responses use `{"rdf:resource": "<url>"}` instead. Accept
     a plain string too, for callers that don't request lean mode."""
@@ -183,7 +195,32 @@ def iter_oslc_skip_errors(
     since a per-row recovery needs to address specific rows directly and must
     stay in lockstep with the full-page cursor afterwards.
     """
-    pageno = 1
+    for _, rows, _ in iter_oslc_pages(
+        session, base_url, headers, resource, page_size=page_size, where=where, select=select,
+        skip_errors=True, on_skip=on_skip, page_fetcher=page_fetcher,
+    ):
+        yield from rows
+
+
+def iter_oslc_pages(
+    session: requests.Session,
+    base_url: str,
+    headers: dict[str, str],
+    resource: str,
+    page_size: int = 250,
+    where: str | None = None,
+    select: str | None = None,
+    start_page: int = 1,
+    skip_errors: bool = False,
+    on_skip: Callable[[SkippedRow], None] | None = None,
+    page_fetcher: Callable[..., tuple[list[dict[str, Any]], str | None]] = fetch_oslc_page,
+) -> Iterator[tuple[int, list[dict[str, Any]], bool]]:
+    """Yield `(pageno, rows, reached_end)` one page at a time, addressing pages
+    by explicit `pageno` from `start_page` — so a caller can checkpoint after
+    any page and later resume from the next one. With `skip_errors`, a page
+    failing with a skippable reason code is recovered row by row (see
+    `iter_oslc_skip_errors`); without it, that error is raised."""
+    pageno = start_page
     while True:
         try:
             rows, _ = page_fetcher(
@@ -195,13 +232,13 @@ def iter_oslc_skip_errors(
             code = _reason_code(exc)
             if code == _PAGE_NOT_FOUND_REASON_CODE:
                 return  # exact multiple of page_size -- the page after the last one
-            if code not in _SKIPPABLE_REASON_CODES:
+            if not skip_errors or code not in _SKIPPABLE_REASON_CODES:
                 raise
             rows, reached_end = _recover_page_row_by_row(
                 page_fetcher, session, base_url, headers, resource,
                 pageno, page_size, where, select, on_skip,
             )
-        yield from rows
+        yield pageno, rows, reached_end
         if reached_end:
             return
         pageno += 1
@@ -244,3 +281,6 @@ def _recover_page_row_by_row(
             continue
         rows.extend(page_rows)
     return rows, reached_end
+
+
+_extract_next_page = extract_next_page  # backwards-compatible private alias

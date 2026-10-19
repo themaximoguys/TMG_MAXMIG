@@ -16,7 +16,7 @@ Pilot scope: the `inventory` and `purchasing` modules only.
 
 ## Step 1 — One-time setup
 
-Run these once, from inside the `/maxdata_mig` project folder.
+Run these once, from inside the `TMG_MAXMIG` project folder.
 
 ```bash
 # Create a virtual environment
@@ -133,14 +133,30 @@ A run that fails partway never leaves a broken CSV at the final filename — you
 | 401 / login failure | Wrong password, or this instance needs an API key instead (Option B in Step 2) |
 | "No file env/.env.\<prefix\>" | The `<prefix>` in `--env` doesn't match your filename, or you need `--env-file` to point at a file that lives elsewhere |
 | `--site` and `--filter siteid=` both set | Pick one — remove the other |
-| Command hangs / very slow on `inventory_balance` | Expected — this table can be ~1M rows; let it finish |
+| Command hangs / very slow on `inventory_balance` | Expected — this table can be ~1M rows; let it finish (run it with `--checkpoint` so a failure can be resumed) |
+| Export failed partway with "progress saved after N page(s)" | Re-run the exact same command with `--resume` (see below) |
+| `--resume` says "written for a different ..." | The filter/env/object changed since the checkpoint; re-run with the original options, or delete the `.checkpoint.json` and `.partial` files to start over |
+
+## Resuming a large export
+
+For any object that takes long enough that a failure would hurt, add `--checkpoint`:
+
+```bash
+./.venv/bin/migrate export --module inventory --object inventory_balance --env MAXDEMO --checkpoint
+```
+
+If it fails partway (network drop, Maximo restart, laptop asleep), the message says how many pages were saved. Fix the cause, then run **the same command** with `--resume` in place of `--checkpoint`:
+
+```bash
+./.venv/bin/migrate export --module inventory --object inventory_balance --env MAXDEMO --resume
+```
+
+It continues from the next page. The finished CSVs are identical to an uninterrupted run, and the manifest notes `"resumed": true`. Don't change `--site`/`--filter`/`--where` between the two runs; the resume refuses if you do. Avoid loading data into the source environment in between, because Maximo pages by position.
+
+For a whole module, `--resume` without `--object` skips the objects that already finished and resumes the one that failed.
 
 ## Limitations (what this can't do yet)
 
-- **No whole-module import.** `export` can run every object in a module at once (omit `--object`); `import` handles one object per run.
-- **No child-relation import.** Child CSVs (`item_spec`/`item_structure`, `pr_line`, `po_line`, `invbalances`) *are* written on export, but only top-level objects can be imported back.
-- **No `discover` command.** Adding a brand-new object type still means someone hand-writes its YAML under `config/modules/`.
-- **No checkpoint/resume.** A very large export that fails partway has to be re-run from the start.
 - **`--execute` not yet exercised live.** The import create/update paths are unit-tested against mocked HTTP, but haven't been run against a real environment — treat your first real `--execute` as validating that.
 
 See [`docs/DESIGN.md`](DESIGN.md) for the full design of what's planned next.

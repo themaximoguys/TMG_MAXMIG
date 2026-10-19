@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING, Callable, Iterator
 import requests
 
 from maxmig.api.filter import Filter, UnsupportedFilterError, to_oslc_where, to_rest_mbo_params
-from maxmig.api.oslc import SkippedRow, build_oslc_select, iter_oslc, iter_oslc_skip_errors
-from maxmig.api.rest_mbo import iter_rest_mbo
+from maxmig.api.oslc import SkippedRow, build_oslc_select, iter_oslc, iter_oslc_pages, iter_oslc_skip_errors
+from maxmig.api.rest_mbo import iter_rest_mbo, iter_rest_mbo_pages
 from maxmig.config import EnvConfig
 
 if TYPE_CHECKING:
@@ -25,6 +25,16 @@ if TYPE_CHECKING:
 # source of truth _api_order maps over, instead of a parallel if/elif chain.
 _RESOURCE_ATTR = {"oslc": "oslc_resource", "rest_mbo": "rest_mbo_table"}
 _ALTERNATE_API = {"oslc": "rest_mbo", "rest_mbo": "oslc"}
+
+
+def _rest_mbo_fields(obj_def: "ObjectDef") -> list[str] | None:
+    """Columns REST MBO should flatten: key fields, standard fields, then custom
+    ones — or None (every attribute) under `capture_all_attributes`."""
+    if getattr(obj_def, "capture_all_attributes", False):
+        return None
+    custom = getattr(obj_def, "custom_fields", None) or []
+    ordered = list(obj_def.key_fields) + list(obj_def.fields) + list(custom)
+    return list(dict.fromkeys(ordered))
 
 
 class MaximoAuthError(RuntimeError):
@@ -130,7 +140,7 @@ class MaximoClient:
                 self.env.manage_url,
                 self.headers,
                 access.rest_mbo_table,
-                obj_def.fields,
+                _rest_mbo_fields(obj_def),
                 filters=to_rest_mbo_params(obj_def.where, filt),
                 page_size=self.page_size,
             )
@@ -172,3 +182,79 @@ class MaximoClient:
             return
         assert last_exc is not None
         raise last_exc
+
+    def _pages_via(
+        self,
+        api: str,
+        obj_def: "ObjectDef",
+        filt: Filter | None,
+        cursor: int | None,
+        skip_errors: bool,
+        on_skip: Callable[[SkippedRow], None] | None,
+    ) -> Iterator[tuple[int | None, list[dict]]]:
+        access = obj_def.access
+        if api == "oslc":
+            for pageno, rows, reached_end in iter_oslc_pages(
+                self.session,
+                self.env.manage_url,
+                self.headers,
+                access.oslc_resource,
+                page_size=self.page_size,
+                where=to_oslc_where(obj_def.where, filt),
+                select=build_oslc_select(obj_def.children),
+                start_page=cursor or 1,
+                skip_errors=skip_errors,
+                on_skip=on_skip,
+            ):
+                yield (None if reached_end else pageno + 1), rows
+        else:
+            if skip_errors:
+                raise ValueError("skip_errors is only supported for the OSLC access path")
+            yield from iter_rest_mbo_pages(
+                self.session,
+                self.env.manage_url,
+                self.headers,
+                access.rest_mbo_table,
+                _rest_mbo_fields(obj_def),
+                filters=to_rest_mbo_params(obj_def.where, filt),
+                page_size=self.page_size,
+                start_rs_start=cursor or 0,
+            )
+
+    def fetch_pages(
+        self,
+        obj_def: "ObjectDef",
+        filter: Filter | None = None,
+        skip_errors: bool = False,
+        on_skip: Callable[[SkippedRow], None] | None = None,
+        api: str | None = None,
+        cursor: int | None = None,
+    ) -> Iterator[tuple[str, int | None, list[dict]]]:
+        """Like `fetch_object`, a page at a time, for checkpointed exports:
+        yields `(api, next_cursor, rows)` where `next_cursor` is the OSLC
+        `pageno` or REST MBO `_rsStart` to resume from (None after the last
+        page). Pages are addressed explicitly, never through nextPage links,
+        so a later process can pick up at `cursor`.
+
+        With `api` given (a resume), that API is used with no fallback —
+        switching APIs mid-export would page a different ordering. Otherwise
+        the same first-page-only fallback as `fetch_object` applies.
+        """
+        api_order = [api] if api else self._api_order(obj_def, filter)
+        last_exc: requests.exceptions.HTTPError | None = None
+        for candidate in api_order:
+            gen = self._pages_via(candidate, obj_def, filter, cursor, skip_errors, on_skip)
+            try:
+                next_cursor, rows = next(gen)
+            except StopIteration:
+                return
+            except requests.exceptions.HTTPError as exc:
+                last_exc = exc
+                continue
+            yield candidate, next_cursor, rows
+            for next_cursor, rows in gen:
+                yield candidate, next_cursor, rows
+            return
+        assert last_exc is not None
+        raise last_exc
+

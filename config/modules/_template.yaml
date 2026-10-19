@@ -70,6 +70,24 @@ objects:
     # date or number reformatting.
     fields: [myobjectnum, siteid, description, status]
 
+    # Custom (user-defined, non-OOB) attributes added to this object via Database
+    # Configuration. Exported/imported exactly like `fields` — kept separate so it's
+    # clear which columns are client-specific. Must not repeat a name from `fields`.
+    # One-off extras can instead be passed at run time: --extra-field ex_attr
+    # (or --extra-field my_child.ex_attr for a child relation).
+    custom_fields: [ex_criticality, ex_budget]
+
+    # Optional Maximo type (MAXATTRIBUTE.MAXTYPE) per attribute, used by
+    # `import --bulk` / `mxl run` to send numbers, YORN booleans and dates correctly
+    # when no data dictionary (`migrate datadict refresh`) knows the attribute —
+    # typically custom ones. Unknown-type attributes are sent as strings.
+    field_types: {ex_budget: AMOUNT}
+
+    # Export every attribute the API returns, not just the ones declared above —
+    # undeclared ones (custom attributes nobody listed yet) become extra columns
+    # after the declared ones. Same as passing --all-attributes on export.
+    capture_all_attributes: false
+
     # Optional default filter applied on extract, in the syntax of the API in
     # use (OSLC: 'status="APPR"'). null means no filter. A --where flag on the
     # CLI overrides this per run.
@@ -97,6 +115,9 @@ objects:
         # Child attributes. Do not repeat the foreign_key columns here; they are
         # written from the parent.
         fields: [mychildnum, description]
+
+        # custom_fields / field_types / capture_all_attributes work on children too.
+        custom_fields: []
 
         # Grandchildren, same shape. Empty list if there are none.
         children: []
