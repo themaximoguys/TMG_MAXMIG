@@ -642,6 +642,10 @@ env/                          # credentials (.env.example committed, real files 
 tests/unit/                   # all against mocked HTTP — no live Maximo needed
 ```
 
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Contributors are listed in [CONTRIBUTORS.md](CONTRIBUTORS.md).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
