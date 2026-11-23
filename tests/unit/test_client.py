@@ -242,3 +242,23 @@ def test_client_skip_errors_rejects_rest_mbo(requests_mock):
     with pytest.raises(ValueError, match="OSLC"):
         list(client.fetch_object(obj_def, skip_errors=True))
     assert not requests_mock.called
+
+
+def test_client_with_apikey_falls_back_to_oslc_when_rest_mbo_serves_sso_login_page(requests_mock):
+    """SSO-fronted MAS: with an apikey, /rest/mbo/ 302s to an HTML login page that
+    `requests` follows to a 200. That must count as a failed request (HTTPError),
+    so the client falls back to OSLC instead of crashing on a JSON decode."""
+    login = "https://auth.example.com/login/"
+    requests_mock.get(f"{BASE_URL}/rest/mbo/company", status_code=302, headers={"Location": login})
+    requests_mock.get(login, text="<html>login</html>", headers={"Content-Type": "text/html"})
+    requests_mock.get(f"{BASE_URL}/api/os/mxapicompany", json={"member": [{"company": "ACME"}]})
+    obj_def = FakeObjectDef(
+        access=FakeAccess("rest_mbo", oslc_resource="mxapicompany", rest_mbo_table="company"),
+        fields=["company"],
+        key_fields=["company"],
+    )
+
+    client = MaximoClient(EnvConfig(prefix="MAXDEMO", manage_url=BASE_URL, api_key="k"))
+    rows = list(client.fetch_object(obj_def))
+
+    assert rows == [{"company": "ACME"}]

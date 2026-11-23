@@ -28,4 +28,16 @@ def get_json(
     """GET `url` with retry/backoff, raise on a non-2xx final response, return parsed JSON."""
     response = call_with_retry(lambda: session.get(url, headers=headers, params=params, timeout=timeout))
     response.raise_for_status()
-    return response.json()
+    try:
+        return response.json()
+    except ValueError as exc:
+        # SSO/OIDC-fronted MAS with apikey auth: endpoints outside /api/ (e.g.
+        # legacy /rest/mbo/) 302 to an HTML login page that `requests` follows
+        # to a 200. Surface that as an HTTPError so callers' API fallback and
+        # error handling treat it as a failed request, not a crash.
+        where = f" (redirected to {response.url})" if response.history else ""
+        raise requests.exceptions.HTTPError(
+            f"non-JSON response from {url}{where} — likely an SSO login page; "
+            f"this endpoint does not accept the configured auth",
+            response=response,
+        ) from exc
